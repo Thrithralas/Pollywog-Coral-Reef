@@ -126,7 +126,7 @@ namespace CoralReef {
         }
 
         private void SnailOnClick(On.Snail.orig_Click orig, Snail self) {
-            //Lets hope nobody hooks self function hooks On.Snail.Click beside me ;-; Curse you IL Editing
+            //Lets hope nobody hooks On.Snail.Click beside me ;-; Curse you IL Editing
             if (self.triggerTicker > 0)
                 return;
             if (self.room.BeingViewed) {
