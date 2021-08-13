@@ -91,6 +91,30 @@ namespace CoralReef {
                 EnumExt_CoralReef.Polliwog,
                 CreatureTemplate.Type.BigEel,
                 new CreatureTemplate.Relationship(CreatureTemplate.Relationship.Type.Afraid, 0.7f));
+            StaticWorld.EstablishRelationship(
+                EnumExt_CoralReef.Polliwog,
+                CreatureTemplate.Type.Vulture,
+                new CreatureTemplate.Relationship(CreatureTemplate.Relationship.Type.Afraid, 0.7f));
+            StaticWorld.EstablishRelationship(
+                EnumExt_CoralReef.Polliwog,
+                CreatureTemplate.Type.KingVulture,
+                new CreatureTemplate.Relationship(CreatureTemplate.Relationship.Type.Afraid, 0.8f));
+            StaticWorld.EstablishRelationship(
+                CreatureTemplate.Type.GreenLizard,
+                EnumExt_CoralReef.Polliwog,
+                new CreatureTemplate.Relationship(CreatureTemplate.Relationship.Type.Eats, 0.5f));
+            StaticWorld.EstablishRelationship(
+                CreatureTemplate.Type.YellowLizard,
+                EnumExt_CoralReef.Polliwog,
+                new CreatureTemplate.Relationship(CreatureTemplate.Relationship.Type.Attacks, 0.5f));
+            StaticWorld.EstablishRelationship(
+                CreatureTemplate.Type.Vulture,
+                EnumExt_CoralReef.Polliwog,
+                new CreatureTemplate.Relationship(CreatureTemplate.Relationship.Type.Eats, 0.6f));
+            StaticWorld.EstablishRelationship(
+                CreatureTemplate.Type.KingVulture,
+                EnumExt_CoralReef.Polliwog,
+                new CreatureTemplate.Relationship(CreatureTemplate.Relationship.Type.Eats, 0.5f));
         }
     }
 }

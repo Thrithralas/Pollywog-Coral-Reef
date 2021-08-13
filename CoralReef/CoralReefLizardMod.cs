@@ -1,10 +1,15 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using LizardCosmetics;
 using On.DevInterface;
+using Partiality;
 using Partiality.Modloader;
 using RWCustom;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace CoralReef {
     public class CoralReefLizardMod : PartialityMod {
@@ -14,6 +19,8 @@ namespace CoralReef {
             ModID = "Coral Reef Custom Lizard";
         }
 
+        public static bool HasSandboxCore = false;
+        
         public override void OnEnable() {
             On.RainWorld.Start += RainWorldOnStart;
         }
@@ -43,9 +50,69 @@ namespace CoralReef {
             On.LizardAI.ComfortableIdlePosition += LizardAIOnComfortableIdlePosition;
             On.LizardAI.LurkTracker.LurkPosScore += LurkTrackerOnLurkPosScore;
             On.LizardAI.LurkTracker.Utility += LurkTrackerOnUtility;
+            
+            /* Sandbox Unlock */
+            foreach (PartialityMod partMod in PartialityManager.Instance.modManager.loadedMods) {
+                if (partMod.ModID == "Custom Sandbox Core") HasSandboxCore = true;
+            }
+
+            var ass = Assembly.GetExecutingAssembly();
+            var resourceName = ass.GetManifestResourceNames().First(s => s.Contains("Kill_Polliwog"));
+            var resource = ass.GetManifestResourceStream(resourceName) ?? Stream.Null;
+
+            using MemoryStream memStream = new MemoryStream();
+            byte[] tempBuffer = new byte[16384]; //Some random number according to Garrakx
+            int count;
+            while ((count = resource.Read(tempBuffer, 0, tempBuffer.Length)) > 0) {
+                memStream.Write(tempBuffer, 0, count);
+            }
+
+            Texture2D texture2D = new Texture2D(0, 0, TextureFormat.ARGB32, false);
+            texture2D.LoadImage(memStream.ToArray());
+            FAtlas atlas = new FAtlas("Kill_Polliwog", texture2D, FAtlasManager._nextAtlasIndex);
+            Futile.atlasManager.AddAtlas(atlas);
+            FAtlasManager._nextAtlasIndex++;
+
+            if (HasSandboxCore) {
+                
+                SandboxUnlockCore.Main.creatures.Add(EnumExt_CoralReef.PolliwogUnlock);
+                SandboxUnlockCore.Main.killScores.Add(EnumExt_CoralReef.PolliwogUnlock, 5);
+                
+                On.MultiplayerUnlocks.SandboxUnlockForSymbolData += MultiplayerUnlocksOnSandboxUnlockForSymbolData;
+                On.MultiplayerUnlocks.SymbolDataForSandboxUnlock += MultiplayerUnlocksOnSymbolDataForSandboxUnlock;
+                On.CreatureSymbol.ColorOfCreature += CreatureSymbolOnColorOfCreature;
+                On.CreatureSymbol.SpriteNameOfCreature += CreatureSymbolOnSpriteNameOfCreature;
+                On.MultiplayerUnlocks.SandboxItemUnlocked += MultiplayerUnlocksOnSandboxItemUnlocked;
+            }
 
             /* Static World Patch */
             StaticWorldPatch.ApplyPatch();
+        }
+
+        private bool MultiplayerUnlocksOnSandboxItemUnlocked(On.MultiplayerUnlocks.orig_SandboxItemUnlocked orig, MultiplayerUnlocks self, MultiplayerUnlocks.SandboxUnlockID unlockid) {
+            return orig(self, unlockid) || unlockid == EnumExt_CoralReef.PolliwogUnlock;
+        }
+
+        private string CreatureSymbolOnSpriteNameOfCreature(On.CreatureSymbol.orig_SpriteNameOfCreature orig, IconSymbol.IconSymbolData icondata) {
+            return icondata.critType == EnumExt_CoralReef.Polliwog
+                ? "Kill_Polliwog"
+                : orig(icondata);
+        }
+
+        private Color CreatureSymbolOnColorOfCreature(On.CreatureSymbol.orig_ColorOfCreature orig, IconSymbol.IconSymbolData icondata) {
+            return icondata.critType == EnumExt_CoralReef.Polliwog
+                ? ((LizardBreedParams) StaticWorld.GetCreatureTemplate(icondata.critType).breedParameters).standardColor
+                : orig(icondata);
+        }
+
+        private IconSymbol.IconSymbolData MultiplayerUnlocksOnSymbolDataForSandboxUnlock(On.MultiplayerUnlocks.orig_SymbolDataForSandboxUnlock orig, MultiplayerUnlocks.SandboxUnlockID unlockid) {
+            return unlockid == EnumExt_CoralReef.PolliwogUnlock 
+                ? new IconSymbol.IconSymbolData(EnumExt_CoralReef.Polliwog, AbstractPhysicalObject.AbstractObjectType.Creature, 0) 
+                : orig(unlockid);
+        }
+
+        private MultiplayerUnlocks.SandboxUnlockID MultiplayerUnlocksOnSandboxUnlockForSymbolData(On.MultiplayerUnlocks.orig_SandboxUnlockForSymbolData orig, IconSymbol.IconSymbolData data) {
+            return data.critType == EnumExt_CoralReef.Polliwog ? EnumExt_CoralReef.PolliwogUnlock : orig(data);
         }
 
         private float LurkTrackerOnUtility(On.LizardAI.LurkTracker.orig_Utility orig, LizardAI.LurkTracker self) {
@@ -331,6 +398,8 @@ namespace CoralReef {
                 breedParams.toughness = .5f;
 
                 template.type = type;
+                template.baseDamageResistance = .5f;
+                template.meatPoints = 5;
 
                 return template;
             }
