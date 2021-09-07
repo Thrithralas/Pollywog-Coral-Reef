@@ -1,8 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Security;
+using System.Security.Permissions;
 using LizardCosmetics;
 using On.DevInterface;
 using Partiality;
@@ -10,6 +12,10 @@ using Partiality.Modloader;
 using RWCustom;
 using UnityEngine;
 using Random = UnityEngine.Random;
+
+[assembly: IgnoresAccessChecksTo("Assembly-CSharp")]
+[assembly: SecurityPermission(SecurityAction.RequestMinimum, SkipVerification = true)]
+[module: UnverifiableCode]
 
 namespace CoralReef {
     public class CoralReefLizardMod : PartialityMod {
@@ -33,6 +39,7 @@ namespace CoralReef {
             On.LizardBreeds.BreedTemplate += LizardBreedsOnBreedTemplate;
             On.LizardGraphics.ctor += LizardGraphicsOnCtor;
             On.LizardVoice.GetMyVoiceTrigger += LizardVoiceOnGetMyVoiceTrigger;
+            On.LizardTongue.ctor += LizardTongueOnCtor;
 
             /* Creature Hooks */
             MapPage.CreatureVis.CritCol += CreatureVisOnCritCol;
@@ -89,19 +96,39 @@ namespace CoralReef {
             StaticWorldPatch.ApplyPatch();
         }
 
+        private void LizardTongueOnCtor(On.LizardTongue.orig_ctor orig, LizardTongue self, Lizard lizard) {
+            orig(self, lizard);
+            if (lizard.Template.type == EnumExt_CoralReef.Polliwog) {
+                self.range = 140f;
+                self.lashOutSpeed = 16f;
+                self.reelInSpeed = 0.000625f;
+                self.baseDrag = 0.01f;
+                self.dragElasticity = 0.1f;
+                self.emptyElasticity = 0.8f;
+                self.involuntaryReleaseChance = 1f / 400f;
+                self.voluntaryReleaseChance = 0.0125f;
+
+                FieldInfo elasticRange = typeof(LizardTongue).GetField(nameof(LizardTongue.elasticRange), BindingFlags.NonPublic | BindingFlags.Instance);
+                elasticRange?.SetValue(self, 0.55f);
+
+                FieldInfo totR = typeof(LizardTongue).GetField(nameof(LizardTongue.totR), BindingFlags.NonPublic | BindingFlags.Instance);
+                totR?.SetValue(self, self.range * 1.1f);
+            }
+        }
+
         private bool MultiplayerUnlocksOnSandboxItemUnlocked(On.MultiplayerUnlocks.orig_SandboxItemUnlocked orig, MultiplayerUnlocks self, MultiplayerUnlocks.SandboxUnlockID unlockid) {
             return orig(self, unlockid) || unlockid == EnumExt_CoralReef.PolliwogUnlock;
         }
 
         private string CreatureSymbolOnSpriteNameOfCreature(On.CreatureSymbol.orig_SpriteNameOfCreature orig, IconSymbol.IconSymbolData icondata) {
             return icondata.critType == EnumExt_CoralReef.Polliwog
-                ? "Kill_Polliwog"
+                ? "Kill_Salamander"
                 : orig(icondata);
         }
 
         private Color CreatureSymbolOnColorOfCreature(On.CreatureSymbol.orig_ColorOfCreature orig, IconSymbol.IconSymbolData icondata) {
             return icondata.critType == EnumExt_CoralReef.Polliwog
-                ? ((LizardBreedParams) StaticWorld.GetCreatureTemplate(icondata.critType).breedParameters).standardColor
+                ? new Color(0.38f, 0.259f, 0.741f)
                 : orig(icondata);
         }
 
@@ -409,9 +436,13 @@ namespace CoralReef {
 
         private void LizardOnCtor(On.Lizard.orig_ctor orig, Lizard self, AbstractCreature abstractcreature, World world) {
             orig(self, abstractcreature, world);
+            int seed = Random.seed;
+            Random.seed = abstractcreature.ID.RandomSeed;
             if (self.Template.type == EnumExt_CoralReef.Polliwog) {
+                self.tongue = new LizardTongue(self);
                 self.effectColor = Custom.HSL2RGB(Custom.WrappedRandomVariation(0.708f, 0.1f, 0.6f), 0.482f, Custom.ClampedRandomVariation(0.5f, 0.15f, 0.1f));
             }
+            Random.seed = seed;
         }
     }
 }
