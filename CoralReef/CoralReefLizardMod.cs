@@ -76,6 +76,8 @@ namespace CoralReef {
 
             Texture2D texture2D = new Texture2D(0, 0, TextureFormat.ARGB32, false);
             texture2D.LoadImage(memStream.ToArray());
+            texture2D.anisoLevel = 1;
+            texture2D.filterMode = 0;
             FAtlas atlas = new FAtlas("Kill_Polliwog", texture2D, FAtlasManager._nextAtlasIndex);
             Futile.atlasManager.AddAtlas(atlas);
             FAtlasManager._nextAtlasIndex++;
@@ -122,7 +124,7 @@ namespace CoralReef {
 
         private string CreatureSymbolOnSpriteNameOfCreature(On.CreatureSymbol.orig_SpriteNameOfCreature orig, IconSymbol.IconSymbolData icondata) {
             return icondata.critType == EnumExt_CoralReef.Polliwog
-                ? "Kill_Salamander"
+                ? "Kill_Polliwog"
                 : orig(icondata);
         }
 
