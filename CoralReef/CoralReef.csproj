@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net35</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <Company>Thrithralas</Company>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Remove="Kill_Polliwog.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Kill_Polliwog.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>..\..\..\..\Downloads\References\Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="HOOKS-Assembly-CSharp">
+      <HintPath>..\..\..\..\Downloads\References\HOOKS-Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="Partiality">
+      <HintPath>..\..\..\..\Downloads\References\Partiality.dll</HintPath>
+    </Reference>
+    <Reference Include="CreatureCore">
+      <HintPath>..\..\..\..\Downloads\RDBMODS\Rain World Bepinex\Rain World\BepInEx\plugins\SandboxCore.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>..\..\..\..\Downloads\References\UnityEngine.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>
