@@ -2,37 +2,38 @@
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Security;
-using System.Security.Permissions;
 using LizardCosmetics;
 using On.DevInterface;
-using Partiality;
-using Partiality.Modloader;
+using BepInEx;
 using RWCustom;
 using UnityEngine;
+using System;
+using Mono.Cecil.Cil;
+using MonoMod.Cil;
 using Random = UnityEngine.Random;
 
-[assembly: IgnoresAccessChecksTo("Assembly-CSharp")]
-[assembly: SecurityPermission(SecurityAction.RequestMinimum, SkipVerification = true)]
-[module: UnverifiableCode]
-
 namespace CoralReef {
-    public class CoralReefLizardMod : PartialityMod {
-        public CoralReefLizardMod() {
-            Version = "0.1";
-            author = "Thrith";
-            ModID = "Coral Reef Custom Lizard";
-        }
+    [BepInPlugin("lb-fgf-m4r-ik.coral-reef", "Coral Reef Custom Lizard & Custom Daddy", "0.2.0")]
+    public class CoralReefLizardMod : BaseUnityPlugin {
 
         public static bool HasSandboxCore = false;
+        public static AttachedField<YellowAI, CommunicationFlicker> commFlicker = new();
+
+        public class CommunicationFlicker {
+            public float lastFlicker;
+            public float currentFlicker;
+            public bool increase;
+            public bool packLeader;
+        }
         
-        public override void OnEnable() {
+        public void OnEnable() {
             On.RainWorld.Start += RainWorldOnStart;
         }
 
         private void RainWorldOnStart(On.RainWorld.orig_Start orig, RainWorld self) {
             orig(self);
+
+            JellyLongLegs.ApplyHooks();
 
             /* Lizard Hooks */
             On.Lizard.ctor += LizardOnCtor;
@@ -40,6 +41,7 @@ namespace CoralReef {
             On.LizardGraphics.ctor += LizardGraphicsOnCtor;
             On.LizardVoice.GetMyVoiceTrigger += LizardVoiceOnGetMyVoiceTrigger;
             On.LizardTongue.ctor += LizardTongueOnCtor;
+            On.LizardCosmetics.AxolotlGills.DrawSprites += AxolotlGillsOnDrawSprites;
 
             /* Creature Hooks */
             MapPage.CreatureVis.CritCol += CreatureVisOnCritCol;
@@ -50,35 +52,51 @@ namespace CoralReef {
             On.LizardAI.ctor += LizardAIOnCtor;
             On.YellowAI.Update += YellowAIOnUpdate;
             On.Lizard.SwimBehavior += LizardOnSwimBehavior;
-            On.Snail.Click += SnailOnClick;
+            IL.Snail.Click += SnailILClick;
             On.Lizard.Update += LizardOnUpdate;
             On.LizardAI.TravelPreference += LizardAIOnTravelPreference;
             On.LizardAI.IdleSpotScore += LizardAIOnIdleSpotScore;
             On.LizardAI.ComfortableIdlePosition += LizardAIOnComfortableIdlePosition;
             On.LizardAI.LurkTracker.LurkPosScore += LurkTrackerOnLurkPosScore;
             On.LizardAI.LurkTracker.Utility += LurkTrackerOnUtility;
-            
+            IL.YellowAI.Update += YellowAIILUpdate;
+            On.YellowAI.ctor += YellowAIOnCtor;
+            On.YellowAI.YellowPack.FindLeader += YellowPackOnFindLeader;
+            On.YellowAI.YellowPack.RemoveLizard_AbstractCreature += YellowPackOnRemoveLizard_AbstractCreature;
+            On.YellowAI.YellowPack.RemoveLizard_int += YellowPackOnRemoveLizard_int;
+            On.LizardGraphics.HeadColor += LizardGraphicsOnHeadColor;
+
             /* Sandbox Unlock */
-            foreach (PartialityMod partMod in PartialityManager.Instance.modManager.loadedMods) {
-                if (partMod.ModID == "Custom Sandbox Core") HasSandboxCore = true;
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies()) {
+                if (asm.FullName.Contains("SandboxCore") || asm.FullName.Contains("CreatureCore") || asm.FullName.Contains("SandboxUnlockCore"))
+                    HasSandboxCore = true;
             }
 
-            var ass = Assembly.GetExecutingAssembly();
-            var resourceName = ass.GetManifestResourceNames().First(s => s.Contains("Kill_Polliwog"));
-            var resource = ass.GetManifestResourceStream(resourceName) ?? Stream.Null;
+            void LoadEmbeddedResource(string spriteName)
+            {
+                var ass = Assembly.GetExecutingAssembly();
+                var resourceName = ass.GetManifestResourceNames().First(s => s.Contains(spriteName));
+                var resource = ass.GetManifestResourceStream(resourceName) ?? Stream.Null;
 
-            using MemoryStream memStream = new MemoryStream();
-            byte[] tempBuffer = new byte[16384]; //Some random number according to Garrakx
-            int count;
-            while ((count = resource.Read(tempBuffer, 0, tempBuffer.Length)) > 0) {
-                memStream.Write(tempBuffer, 0, count);
+                using MemoryStream memStream = new();
+                var tempBuffer = new byte[16384]; //Some random number according to Garrakx
+                int count;
+
+                while ((count = resource.Read(tempBuffer, 0, tempBuffer.Length)) > 0)
+                    memStream.Write(tempBuffer, 0, count);
+
+                Texture2D texture2D = new(0, 0, TextureFormat.ARGB32, false);
+                texture2D.LoadImage(memStream.ToArray());
+                texture2D.anisoLevel = 1;
+                texture2D.filterMode = 0;
+                FAtlas atlas = new(spriteName, texture2D, FAtlasManager._nextAtlasIndex);
+                Futile.atlasManager.AddAtlas(atlas);
+                FAtlasManager._nextAtlasIndex++;
             }
 
-            Texture2D texture2D = new Texture2D(0, 0, TextureFormat.ARGB32, false);
-            texture2D.LoadImage(memStream.ToArray());
-            FAtlas atlas = new FAtlas("Kill_Polliwog", texture2D, FAtlasManager._nextAtlasIndex);
-            Futile.atlasManager.AddAtlas(atlas);
-            FAtlasManager._nextAtlasIndex++;
+            LoadEmbeddedResource("Kill_Polliwog");
+            LoadEmbeddedResource("JellyLLGraf");
+            LoadEmbeddedResource("JellyLLGrad");
 
             if (HasSandboxCore) {
                 
@@ -96,6 +114,116 @@ namespace CoralReef {
             StaticWorldPatch.ApplyPatch();
         }
 
+        private Color LizardGraphicsOnHeadColor(On.LizardGraphics.orig_HeadColor orig, LizardGraphics self, float timeStacker) {
+            var color = orig(self, timeStacker);
+           
+            if (self.lizard is Lizard l && l.AI?.yellowAI is YellowAI y && l.Template.type == EnumExt_CoralReef.Polliwog && commFlicker.TryGet(y, out var c) && c.packLeader) {
+                var flicker = Mathf.Lerp(c.lastFlicker, c.currentFlicker, timeStacker);
+
+                if (!l.Consious)
+                    flicker = 0f;
+
+                color = Color.Lerp(color, new(1f, .007843137254902f, .3529411764705882f), flicker);
+            }
+            
+            return color;
+        }
+
+        private void YellowPackOnRemoveLizard_int(On.YellowAI.YellowPack.orig_RemoveLizard_int orig, YellowAI.YellowPack self, int index) {
+            if (self.members[index]?.lizard?.realizedCreature is Lizard l && l.AI?.yellowAI is YellowAI y && l.Template.type == EnumExt_CoralReef.Polliwog && commFlicker.TryGet(y, out var c) && c.packLeader)
+                c.packLeader = false;
+            orig(self, index);
+        }
+
+        private void YellowPackOnRemoveLizard_AbstractCreature(On.YellowAI.YellowPack.orig_RemoveLizard_AbstractCreature orig, YellowAI.YellowPack self, AbstractCreature removeLizard) {
+            for (var num = self.members.Count - 1; num >= 0; num--) {
+                if (self.members[num]?.lizard == removeLizard && removeLizard?.realizedCreature is Lizard l && l.AI?.yellowAI is YellowAI y && l.Template.type == EnumExt_CoralReef.Polliwog && commFlicker.TryGet(y, out var c) && c.packLeader)
+                    c.packLeader = false;
+            }
+            orig(self, removeLizard);
+        }
+
+        private void YellowPackOnFindLeader(On.YellowAI.YellowPack.orig_FindLeader orig, YellowAI.YellowPack self) {
+            orig(self);
+            for (var i = 0; i < self.members.Count; i++) {
+                if (self.members[i]?.lizard?.realizedCreature is Lizard l && l.AI?.yellowAI is YellowAI y && l.Template.type == EnumExt_CoralReef.Polliwog && commFlicker.TryGet(y, out var c)) {
+                    if (self.members[i].role is YellowAI.YellowPack.Role.Leader)
+                        c.packLeader = true;
+                    else
+                        c.packLeader = false;
+                }
+            }
+        }
+
+        private void YellowAIOnCtor(On.YellowAI.orig_ctor orig, YellowAI self, ArtificialIntelligence AI) {
+            orig(self, AI);
+            commFlicker[self] = new();
+        }
+
+        private void YellowAIILUpdate(ILContext il) {
+            ILCursor c = new(il);
+
+            if (c.TryGotoNext(MoveType.After,
+               x => x.MatchCall<Mathf>("Max"),
+               x => x.MatchStfld<YellowAI>("commFlicker"))) {
+                c.Emit(OpCodes.Ldarg_0);
+                c.EmitDelegate<Action<YellowAI>>((YellowAI self) => {
+                    if (self.lizard is Lizard l && l.Template.type == EnumExt_CoralReef.Polliwog && commFlicker.TryGet(self, out var co)) {
+                        co.lastFlicker = co.currentFlicker;
+                        co.currentFlicker = Mathf.Clamp(co.increase ? co.currentFlicker + 0.25f : co.currentFlicker - 0.2f, -0.5f, 1f);
+                        if (co.currentFlicker >= 1f || !l.Consious)
+                            co.increase = false;
+                        else if (self.communicating > 0 && co.currentFlicker <= -0.5f)
+                            co.increase = true;
+                    }
+                });
+            }
+            else
+                Logger.LogError("Couldn't ILHook YellowAI.Update!");
+        }
+
+        private void SnailILClick(ILContext il) {
+            ILCursor c = new(il);
+            var loc = -1;
+            ILLabel beq = null;
+
+            if (c.TryGotoNext(MoveType.After, 
+                x => x.MatchBr(out _), 
+                x => x.MatchLdloca(out _), 
+                x => x.MatchCall(out _), 
+                x => x.MatchStloc(out _), 
+                x => x.MatchLdloc(out loc), 
+                x => x.MatchLdarg(0),
+                x => x.MatchBeq(out beq))
+                && loc != -1 && beq != null) {
+
+                c.Emit(OpCodes.Ldloc, il.Body.Variables[loc]);
+                c.EmitDelegate<Func<PhysicalObject, bool>>((PhysicalObject self)
+                    => self is Creature cr && cr.Template.type == EnumExt_CoralReef.Polliwog);
+                c.Emit(OpCodes.Brtrue, beq);
+            }
+            else  
+                Logger.LogError("Couldn't ILHook Snail.Click!");
+        }
+
+        private void AxolotlGillsOnDrawSprites(On.LizardCosmetics.AxolotlGills.orig_DrawSprites orig, AxolotlGills self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos) {
+            orig(self, sLeaser, rCam, timeStacker, camPos);
+
+            if (self.lGraphics?.lizard is Lizard l && l.AI?.yellowAI is YellowAI y && l.Template.type == EnumExt_CoralReef.Polliwog && commFlicker.TryGet(y, out var c)) {
+                var flicker = Mathf.Lerp(c.lastFlicker, c.currentFlicker, timeStacker);
+                
+                if (!l.Consious)
+                    flicker = 0f;
+
+                for (var num = self.startSprite + self.scalesPositions.Length - 1; num >= self.startSprite; num--) {
+                    sLeaser.sprites[num].color = Color.Lerp(self.lGraphics.HeadColor(timeStacker), Color.Lerp(self.lGraphics.HeadColor(timeStacker), self.lGraphics.effectColor, 0.6f), flicker);
+                    
+                    if (self.colored)
+                        sLeaser.sprites[num + self.scalesPositions.Length].color = c.packLeader ? self.lGraphics.HeadColor(timeStacker) : Color.Lerp(self.lGraphics.HeadColor(timeStacker), new(1f, .007843137254902f, .3529411764705882f), flicker);
+                }
+            }
+        }
+
         private void LizardTongueOnCtor(On.LizardTongue.orig_ctor orig, LizardTongue self, Lizard lizard) {
             orig(self, lizard);
             if (lizard.Template.type == EnumExt_CoralReef.Polliwog) {
@@ -108,11 +236,13 @@ namespace CoralReef {
                 self.involuntaryReleaseChance = 1f / 400f;
                 self.voluntaryReleaseChance = 0.0125f;
 
-                FieldInfo elasticRange = typeof(LizardTongue).GetField(nameof(LizardTongue.elasticRange), BindingFlags.NonPublic | BindingFlags.Instance);
-                elasticRange?.SetValue(self, 0.55f);
+                /*FieldInfo elasticRange = typeof(LizardTongue).GetField(nameof(LizardTongue.elasticRange), BindingFlags.NonPublic | BindingFlags.Instance);
+                elasticRange?.SetValue(self, 0.55f);*/ //stubbed asm that removes readonly
+                self.elasticRange = 0.55f;
 
-                FieldInfo totR = typeof(LizardTongue).GetField(nameof(LizardTongue.totR), BindingFlags.NonPublic | BindingFlags.Instance);
-                totR?.SetValue(self, self.range * 1.1f);
+                /*FieldInfo totR = typeof(LizardTongue).GetField(nameof(LizardTongue.totR), BindingFlags.NonPublic | BindingFlags.Instance);
+                totR?.SetValue(self, self.range * 1.1f);*/ //stubbed asm that removes readonly
+                self.totR = self.range * 1.1f;
             }
         }
 
@@ -122,7 +252,7 @@ namespace CoralReef {
 
         private string CreatureSymbolOnSpriteNameOfCreature(On.CreatureSymbol.orig_SpriteNameOfCreature orig, IconSymbol.IconSymbolData icondata) {
             return icondata.critType == EnumExt_CoralReef.Polliwog
-                ? "Kill_Salamander"
+                ? "Kill_Polliwog"
                 : orig(icondata);
         }
 
@@ -219,69 +349,6 @@ namespace CoralReef {
             if (self.Template.type == EnumExt_CoralReef.Polliwog) self.lungs = 1f;
         }
 
-        private void SnailOnClick(On.Snail.orig_Click orig, Snail self) {
-            //Lets hope nobody hooks On.Snail.Click beside me ;-; Curse you IL Editing
-            if (self.triggerTicker > 0)
-                return;
-            if (self.room.BeingViewed) {
-                // ReSharper disable once CompareOfFloatsByEqualityOperator
-                if (self.bodyChunks[1].submersion == 1.0) {
-                    self.room.AddObject(new ShockWave(self.bodyChunks[1].pos, 160f * self.size, 0.07f, 9));
-                }
-                else {
-                    self.room.AddObject(new ShockWave(self.bodyChunks[1].pos, 100f * self.size, 0.07f, 6));
-                    for (int index = 0; index < 10; ++index)
-                        self.room.AddObject(new WaterDrip(self.bodyChunks[1].pos, Custom.DegToVec(Random.value * 360f) * Mathf.Lerp(4f, 21f, Random.value), false));
-                }
-            }
-
-            self.Stun(60);
-            self.clickCounter = 0.0f;
-            self.room.PlaySound(SoundID.Snail_Pop, self.mainBodyChunk);
-            float num1 = 60f * self.size;
-            foreach (var pList in self.room.physicalObjects) {
-                foreach (var current in pList.Where(current => current != self)) {
-                    if (current is Creature creature && creature.Template.type == EnumExt_CoralReef.Polliwog) {
-                        continue;
-                    }
-
-                    foreach (BodyChunk bodyChunk in current.bodyChunks) {
-                        float num2 = (float)(1.0 + bodyChunk.submersion * (double)self.bodyChunks[1].submersion * 4.5);
-                        if (Custom.DistLess(bodyChunk.pos, self.bodyChunks[1].pos, num1 * num2 + bodyChunk.rad + self.bodyChunks[1].rad) && self.room.VisualContact(bodyChunk.pos, self.bodyChunks[1].pos)) {
-                            float num3 = Mathf.InverseLerp(num1 * num2 + bodyChunk.rad + self.bodyChunks[1].rad, (float)((num1 * (double)num2 + bodyChunk.rad + self.bodyChunks[1].rad) / 2.0), Vector2.Distance(bodyChunk.pos, self.bodyChunks[1].pos));
-                            bodyChunk.vel += Custom.DirVec(self.bodyChunks[1].pos + new Vector2(0.0f, !self.IsTileSolid(1, 0, -1) ? 0.0f : -20f), bodyChunk.pos) * num3 * num2 * 3f / bodyChunk.mass;
-                            if (current is Creature creature2)
-                                creature2.Stun((int)(60.0 * num3));
-                            if (current is Leech leech) {
-                                if (Random.value < 0.0333333350718021 || Custom.DistLess(self.bodyChunks[1].pos, bodyChunk.pos, (float)(self.bodyChunks[1].rad + (double)bodyChunk.rad + 5.0)))
-                                    leech.Die();
-                                else
-                                    leech.Stun((int)(num3 * (double)bodyChunk.submersion * Mathf.Lerp(800f, 900f, Random.value)));
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (self.room.waterObject != null) {
-                float num4 = (float)(1.0 + self.bodyChunks[1].submersion * 1.5);
-                self.room.waterObject.Explosion(self.bodyChunks[1].pos, (float)(num1 * (double)num4 * 1.20000004768372), num4 * 3f);
-            }
-
-            self.suckPoint = new Vector2?();
-            for (int bChunk = 0; bChunk < 2; ++bChunk) {
-                if (self.IsTileSolid(bChunk, 0, -1))
-                    self.bodyChunks[bChunk].vel += Custom.DegToVec((float)(100.0 * Random.value - 50.0)) * 10f;
-                else
-                    self.bodyChunks[bChunk].vel += Custom.DegToVec(Random.value * 360f) * 10f;
-            }
-
-            self.VibrateLeeches(1000f);
-            self.justClicked = true;
-            self.bloated = true;
-            self.triggered = false;
-        }
-
         private void LizardOnSwimBehavior(On.Lizard.orig_SwimBehavior orig, Lizard self) {
             if (self.Template.type == EnumExt_CoralReef.Polliwog) {
                 // Copied code from Salamander
@@ -300,7 +367,7 @@ namespace CoralReef {
                 }
                 else {
                     self.salamanderLurk = false;
-                    Vector2 vector2 = new Vector2(0.0f, 0.0f);
+                    Vector2 vector2 = new(0.0f, 0.0f);
                     if (!self.AI.pathFinder.GetDestination.NodeDefined && self.AI.pathFinder.GetDestination.room == self.room.abstractRoom.index && self.room.GetTile(self.AI.pathFinder.GetDestination).AnyWater && self.room.VisualContact(self.mainBodyChunk.pos, self.room.MiddleOfTile(self.AI.pathFinder.GetDestination))) {
                         vector2 = Custom.DirVec(self.mainBodyChunk.pos, self.room.MiddleOfTile(self.AI.pathFinder.GetDestination));
                     }
@@ -378,7 +445,7 @@ namespace CoralReef {
                 string str = "Blue"; // Lizard voice
 
                 string[] array = { "A", "B", "C", "D", "E" };
-                List<SoundID> list = new List<SoundID>();
+                List<SoundID> list = new();
                 for (int i = 0; i < 5; i++) {
                     SoundID soundID;
                     try {
